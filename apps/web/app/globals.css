@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@source "../node_modules/streamdown/dist/index.js";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -26,6 +28,7 @@
   --border: oklch(0.85 0 0);
   --input: oklch(0.85 0 0);
   --ring: oklch(0.6 0 0);
+  --chat-bg: oklch(0.95 0 0);
 }
 
 .dark {
@@ -50,6 +53,7 @@
   --border: oklch(0.25 0 0);
   --input: oklch(0.25 0 0);
   --ring: oklch(0.4 0 0);
+  --chat-bg: oklch(0.25 0 0);
 }
 
 @theme inline {
@@ -107,27 +111,75 @@
     @apply bg-transparent p-0;
   }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  /* Hide page scrollbar */
+  html {
+    scrollbar-width: none;
   }
 
-  ::-webkit-scrollbar-track {
-    @apply bg-background;
+  html::-webkit-scrollbar {
+    display: none;
   }
 
-  ::-webkit-scrollbar-thumb {
-    @apply bg-border rounded;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground;
-  }
 }
 
 button {
   cursor: pointer;
+}
+
+/* Tool call shimmer animation */
+@keyframes tool-shimmer {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+.animate-tool-shimmer {
+  animation: tool-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Fix list rendering in chat content */
+.docs-chat-content ul,
+.docs-chat-content ol {
+  list-style-position: outside;
+  padding-left: 1.25em;
+}
+
+.docs-chat-content li > p {
+  display: inline;
+  margin: 0;
+}
+
+.docs-chat-content li {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* MDX table styles — applies to both GFM pipe tables and raw HTML tables */
+.mdx-table th,
+.mdx-table td,
+article table th,
+article table td {
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+.mdx-table th,
+article table th {
+  font-weight: 600;
+  background-color: var(--muted);
+}
+
+.mdx-table td,
+article table td {
+  color: var(--muted-foreground);
+}
+
+article table {
+  width: 100%;
+  font-size: 0.875rem;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
 }
 
 /* Shiki dual theme support */
@@ -142,3 +194,4 @@ button {
   color: var(--shiki-dark) !important;
   background-color: var(--shiki-dark-bg) !important;
 }
+

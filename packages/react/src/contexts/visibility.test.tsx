@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderHook } from "@testing-library/react";
 import { VisibilityProvider, useVisibility, useIsVisible } from "./visibility";
-import { DataProvider } from "./data";
+import { StateProvider } from "./state";
 
 const createWrapper =
-  (data: Record<string, unknown> = {}, authState?: { isSignedIn: boolean }) =>
+  (data: Record<string, unknown> = {}) =>
   ({ children }: { children: React.ReactNode }) => (
-    <DataProvider initialData={data} authState={authState}>
+    <StateProvider initialState={data}>
       <VisibilityProvider>{children}</VisibilityProvider>
-    </DataProvider>
+    </StateProvider>
   );
 
 describe("useVisibility", () => {
@@ -26,7 +26,7 @@ describe("useVisibility", () => {
       wrapper: createWrapper({ test: true }),
     });
 
-    expect(result.current.ctx.dataModel).toEqual({ test: true });
+    expect(result.current.ctx.stateModel).toEqual({ test: true });
   });
 });
 
@@ -55,48 +55,36 @@ describe("useIsVisible", () => {
     expect(result.current).toBe(false);
   });
 
-  it("evaluates path conditions against data", () => {
+  it("evaluates $state conditions against data", () => {
     const { result: trueResult } = renderHook(
-      () => useIsVisible({ path: "/isVisible" }),
+      () => useIsVisible({ $state: "/isVisible" }),
       { wrapper: createWrapper({ isVisible: true }) },
     );
     expect(trueResult.current).toBe(true);
 
     const { result: falseResult } = renderHook(
-      () => useIsVisible({ path: "/isVisible" }),
+      () => useIsVisible({ $state: "/isVisible" }),
       { wrapper: createWrapper({ isVisible: false }) },
     );
     expect(falseResult.current).toBe(false);
   });
 
-  it("evaluates auth conditions", () => {
-    const { result: signedInResult } = renderHook(
-      () => useIsVisible({ auth: "signedIn" }),
-      { wrapper: createWrapper({}, { isSignedIn: true }) },
+  it("evaluates equality conditions", () => {
+    const { result } = renderHook(
+      () => useIsVisible({ $state: "/count", eq: 1 }),
+      { wrapper: createWrapper({ count: 1 }) },
     );
-    expect(signedInResult.current).toBe(true);
-
-    const { result: signedOutResult } = renderHook(
-      () => useIsVisible({ auth: "signedOut" }),
-      { wrapper: createWrapper({}, { isSignedIn: false }) },
-    );
-    expect(signedOutResult.current).toBe(true);
-  });
-
-  it("evaluates logic expressions", () => {
-    const { result } = renderHook(() => useIsVisible({ eq: [1, 1] }), {
-      wrapper: createWrapper(),
-    });
 
     expect(result.current).toBe(true);
   });
 
-  it("evaluates complex conditions with data", () => {
+  it("evaluates array conditions (implicit AND)", () => {
     const { result } = renderHook(
       () =>
-        useIsVisible({
-          and: [{ path: "/user/isAdmin" }, { eq: [{ path: "/count" }, 5] }],
-        }),
+        useIsVisible([
+          { $state: "/user/isAdmin" },
+          { $state: "/count", eq: 5 },
+        ]),
       { wrapper: createWrapper({ user: { isAdmin: true }, count: 5 }) },
     );
 

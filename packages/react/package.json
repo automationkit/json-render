@@ -1,6 +1,6 @@
 {
   "name": "@json-render/react",
-  "version": "0.2.0",
+  "version": "0.14.1",
   "license": "Apache-2.0",
   "description": "React renderer for @json-render/core. JSON becomes React components.",
   "keywords": [
@@ -19,7 +19,7 @@
     "url": "git+https://github.com/vercel-labs/json-render.git",
     "directory": "packages/react"
   },
-  "homepage": "https://github.com/vercel-labs/json-render#readme",
+  "homepage": "https://json-render.dev",
   "bugs": {
     "url": "https://github.com/vercel-labs/json-render/issues"
   },
@@ -34,6 +34,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.mjs",
+      "require": "./dist/schema.js"
     }
   },
   "files": [
@@ -48,12 +53,13 @@
     "@json-render/core": "workspace:*"
   },
   "devDependencies": {
-    "@repo/typescript-config": "workspace:*",
+    "@internal/react-state": "workspace:*",
+    "@internal/typescript-config": "workspace:*",
     "@types/react": "19.2.3",
     "tsup": "^8.0.2",
     "typescript": "^5.4.5"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.2.3"
   }
 }

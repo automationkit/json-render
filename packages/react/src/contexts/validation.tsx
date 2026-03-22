@@ -3,6 +3,7 @@
 import React, {
   createContext,
   useContext,
+  useRef,
   useState,
   useCallback,
   useMemo,
@@ -14,7 +15,7 @@ import {
   type ValidationFunction,
   type ValidationResult,
 } from "@json-render/core";
-import { useData } from "./data";
+import { useStateStore } from "./state";
 
 /**
  * Field validation state
@@ -60,68 +61,157 @@ export interface ValidationProviderProps {
 }
 
 /**
+ * Compare two DynamicValue args records shallowly.
+ * Values are primitives or { $state: string }, so shallow comparison suffices.
+ */
+function dynamicArgsEqual(
+  a: Record<string, unknown> | undefined,
+  b: Record<string, unknown> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+
+  for (const key of keysA) {
+    const va = a[key];
+    const vb = b[key];
+    if (va === vb) continue;
+    // Handle { $state: string } objects
+    if (
+      typeof va === "object" &&
+      va !== null &&
+      typeof vb === "object" &&
+      vb !== null
+    ) {
+      const sa = (va as Record<string, unknown>).$state;
+      const sb = (vb as Record<string, unknown>).$state;
+      if (typeof sa === "string" && sa === sb) continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Structural equality check for ValidationConfig.
+ */
+function validationConfigEqual(
+  a: ValidationConfig,
+  b: ValidationConfig,
+): boolean {
+  if (a === b) return true;
+
+  // Compare validateOn
+  if (a.validateOn !== b.validateOn) return false;
+
+  // Compare checks arrays
+  const ac = a.checks ?? [];
+  const bc = b.checks ?? [];
+  if (ac.length !== bc.length) return false;
+
+  for (let i = 0; i < ac.length; i++) {
+    const ca = ac[i]!;
+    const cb = bc[i]!;
+    if (ca.type !== cb.type) return false;
+    if (ca.message !== cb.message) return false;
+    if (!dynamicArgsEqual(ca.args, cb.args)) return false;
+  }
+
+  return true;
+}
+
+/**
  * Provider for validation
  */
 export function ValidationProvider({
   customFunctions = {},
   children,
 }: ValidationProviderProps) {
-  const { data, authState } = useData();
+  const { state, getSnapshot } = useStateStore();
+
   const [fieldStates, setFieldStates] = useState<
     Record<string, FieldValidationState>
   >({});
+  // Mutable mirror of fieldStates for synchronous reads (e.g. reading errors
+  // immediately after validateAll() before React flushes the batched setState).
+  const fieldStatesRef = useRef<Record<string, FieldValidationState>>({});
   const [fieldConfigs, setFieldConfigs] = useState<
     Record<string, ValidationConfig>
   >({});
 
   const registerField = useCallback(
     (path: string, config: ValidationConfig) => {
-      setFieldConfigs((prev) => ({ ...prev, [path]: config }));
+      setFieldConfigs((prev) => {
+        const existing = prev[path];
+        // Bail out (return same reference) if config is unchanged to avoid
+        // infinite re-render loops when callers pass a fresh object each render.
+        if (existing && validationConfigEqual(existing, config)) {
+          return prev;
+        }
+        return { ...prev, [path]: config };
+      });
     },
     [],
   );
 
   const validate = useCallback(
     (path: string, config: ValidationConfig): ValidationResult => {
-      const value = data[path.split("/").filter(Boolean).join(".")];
+      // Read from the store directly so validation sees values written in the
+      // same synchronous handler (e.g. setValue then validate in onChange).
+      // Using React state would return the stale pre-render snapshot.
+      const currentState = getSnapshot();
+      const segments = path.split("/").filter(Boolean);
+      let value: unknown = currentState;
+      for (const seg of segments) {
+        if (value != null && typeof value === "object") {
+          value = (value as Record<string, unknown>)[seg];
+        } else {
+          value = undefined;
+          break;
+        }
+      }
       const result = runValidation(config, {
         value,
-        dataModel: data,
+        stateModel: currentState,
         customFunctions,
-        authState,
       });
 
-      setFieldStates((prev) => ({
-        ...prev,
-        [path]: {
-          touched: prev[path]?.touched ?? true,
-          validated: true,
-          result,
-        },
-      }));
+      const newFieldState: FieldValidationState = {
+        touched: fieldStatesRef.current[path]?.touched ?? true,
+        validated: true,
+        result,
+      };
+      fieldStatesRef.current = {
+        ...fieldStatesRef.current,
+        [path]: newFieldState,
+      };
+      setFieldStates(fieldStatesRef.current);
 
       return result;
     },
-    [data, customFunctions, authState],
+    [customFunctions, getSnapshot],
   );
 
   const touch = useCallback((path: string) => {
-    setFieldStates((prev) => ({
-      ...prev,
+    fieldStatesRef.current = {
+      ...fieldStatesRef.current,
       [path]: {
-        ...prev[path],
+        ...fieldStatesRef.current[path],
         touched: true,
-        validated: prev[path]?.validated ?? false,
-        result: prev[path]?.result ?? null,
+        validated: fieldStatesRef.current[path]?.validated ?? false,
+        result: fieldStatesRef.current[path]?.result ?? null,
       },
-    }));
+    };
+    setFieldStates(fieldStatesRef.current);
   }, []);
 
   const clear = useCallback((path: string) => {
-    setFieldStates((prev) => {
-      const { [path]: _, ...rest } = prev;
-      return rest;
-    });
+    const { [path]: _, ...rest } = fieldStatesRef.current;
+    fieldStatesRef.current = rest;
+    setFieldStates(rest);
   }, []);
 
   const validateAll = useCallback(() => {
@@ -140,7 +230,11 @@ export function ValidationProvider({
   const value = useMemo<ValidationContextValue>(
     () => ({
       customFunctions,
-      fieldStates,
+      // Getter returns the mutable ref so callers that read fieldStates
+      // synchronously after validateAll() see the latest values.
+      get fieldStates() {
+        return fieldStatesRef.current;
+      },
       validate,
       touch,
       clear,
@@ -149,6 +243,8 @@ export function ValidationProvider({
     }),
     [
       customFunctions,
+      // fieldStates (React state) stays in deps so the context value object
+      // is recreated on re-render, triggering downstream consumers.
       fieldStates,
       validate,
       touch,
@@ -177,6 +273,14 @@ export function useValidation(): ValidationContextValue {
 }
 
 /**
+ * Non-throwing variant of useValidation.
+ * Returns null when no ValidationProvider is present.
+ */
+export function useOptionalValidation(): ValidationContextValue | null {
+  return useContext(ValidationContext);
+}
+
+/**
  * Hook to get validation state for a field
  */
 export function useFieldValidation(
@@ -200,7 +304,7 @@ export function useFieldValidation(
 
   // Register field on mount
   React.useEffect(() => {
-    if (config) {
+    if (path && config) {
       registerField(path, config);
     }
   }, [path, config, registerField]);

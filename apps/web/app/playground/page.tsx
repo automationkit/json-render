@@ -1,8 +1,7 @@
 import { Playground } from "@/components/playground";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata = {
-  title: "Playground | json-render",
-};
+export const metadata = pageMetadata("playground");
 
 export default function PlaygroundPage() {
   return <Playground />;

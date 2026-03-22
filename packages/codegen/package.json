@@ -1,6 +1,6 @@
 {
   "name": "@json-render/codegen",
-  "version": "0.1.0",
+  "version": "0.14.1",
   "license": "Apache-2.0",
   "description": "Utilities for generating code from json-render UI trees",
   "keywords": [
@@ -15,7 +15,7 @@
     "url": "git+https://github.com/vercel-labs/json-render.git",
     "directory": "packages/codegen"
   },
-  "homepage": "https://github.com/vercel-labs/json-render#readme",
+  "homepage": "https://json-render.dev",
   "bugs": {
     "url": "https://github.com/vercel-labs/json-render/issues"
   },
@@ -44,7 +44,7 @@
     "@json-render/core": "workspace:*"
   },
   "devDependencies": {
-    "@repo/typescript-config": "workspace:*",
+    "@internal/typescript-config": "workspace:*",
     "tsup": "^8.0.2",
     "typescript": "^5.4.5"
   }

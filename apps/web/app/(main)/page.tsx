@@ -9,12 +9,16 @@ export default function Home() {
     <>
       {/* Hero */}
       <section className="max-w-5xl mx-auto px-6 pt-24 pb-16 text-center">
-        <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tighter mb-6">
+        <p className="text-xs sm:text-sm font-medium text-muted-foreground tracking-widest uppercase mb-4">
+          The Generative UI Framework
+        </p>
+        <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tighter mb-6">
           AI → json-render → UI
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed">
-          Define a component catalog. Users prompt. AI outputs JSON constrained
-          to your catalog. Your components render it.
+          Generate dynamic, personalized UIs from prompts without sacrificing
+          reliability. Predefined components and actions for safe, predictable
+          output.
         </p>
 
         <Demo />
@@ -65,10 +69,10 @@ export default function Home() {
               <div className="text-xs text-muted-foreground font-mono mb-3">
                 02
               </div>
-              <h3 className="text-lg font-semibold mb-2">Users Prompt</h3>
+              <h3 className="text-lg font-semibold mb-2">AI Generates</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                End users describe what they want. AI generates JSON constrained
-                to your catalog.
+                Describe what you want. AI generates JSON constrained to your
+                catalog. Every interface is unique.
               </p>
             </div>
             <div>
@@ -96,10 +100,12 @@ export default function Home() {
               <p className="text-muted-foreground mb-6">
                 Components, actions, and validation functions.
               </p>
-              <Code lang="typescript">{`import { createCatalog } from '@json-render/core';
+              <Code lang="typescript">{`import { defineSchema, defineCatalog } from '@json-render/core';
 import { z } from 'zod';
 
-export const catalog = createCatalog({
+const schema = defineSchema({ /* ... */ });
+
+export const catalog = defineCatalog(schema, {
   components: {
     Card: {
       props: z.object({
@@ -111,7 +117,7 @@ export const catalog = createCatalog({
     Metric: {
       props: z.object({
         label: z.string(),
-        valuePath: z.string(),
+        statePath: z.string(),
         format: z.enum(['currency', 'percent']),
       }),
     },
@@ -127,23 +133,24 @@ export const catalog = createCatalog({
                 Constrained output that your components render natively.
               </p>
               <Code lang="json">{`{
-  "key": "dashboard",
-  "type": "Card",
-  "props": {
-    "title": "Revenue Dashboard",
-    "description": null
-  },
-  "children": [
-    {
-      "key": "revenue",
+  "root": "dashboard",
+  "elements": {
+    "dashboard": {
+      "type": "Card",
+      "props": {
+        "title": "Revenue Dashboard"
+      },
+      "children": ["revenue"]
+    },
+    "revenue": {
       "type": "Metric",
       "props": {
         "label": "Total Revenue",
-        "valuePath": "/metrics/revenue",
+        "statePath": "/metrics/revenue",
         "format": "currency"
       }
     }
-  ]
+  }
 }`}</Code>
             </div>
           </div>
@@ -170,25 +177,22 @@ export const catalog = createCatalog({
   "root": "card",
   "elements": {
     "card": {
-      "key": "card",
       "type": "Card",
       "props": { "title": "Revenue" },
       "children": ["metric", "chart"]
     },
     "metric": {
-      "key": "metric",
       "type": "Metric",
       "props": {
         "label": "Total Revenue",
-        "valuePath": "analytics/revenue",
+        "statePath": "analytics/revenue",
         "format": "currency"
       }
     },
     "chart": {
-      "key": "chart",
       "type": "Chart",
       "props": {
-        "dataPath": "analytics/salesByRegion"
+        "statePath": "analytics/salesByRegion"
       }
     }
   }
@@ -221,10 +225,10 @@ export default function Page() {
       <Metric
         data={data}
         label="Total Revenue"
-        valuePath="analytics/revenue"
+        statePath="analytics/revenue"
         format="currency"
       />
-      <Chart data={data} dataPath="analytics/salesByRegion" />
+      <Chart data={data} statePath="analytics/salesByRegion" />
     </Card>
   );
 }`}</Code>
@@ -247,6 +251,10 @@ export default function Page() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {[
               {
+                title: "Generative UI",
+                desc: "Generate dynamic, personalized interfaces from prompts with AI",
+              },
+              {
                 title: "Guardrails",
                 desc: "AI can only use components you define in the catalog",
               },
@@ -255,20 +263,16 @@ export default function Page() {
                 desc: "Progressive rendering as JSON streams from the model",
               },
               {
-                title: "Code Export",
-                desc: "Export as standalone React code with no runtime dependencies",
+                title: "React & React Native",
+                desc: "Render on web and mobile from the same catalog and spec format",
               },
               {
                 title: "Data Binding",
-                desc: "Two-way binding with JSON Pointer paths",
+                desc: "Connect props to state with $state, $item, $index, and two-way binding",
               },
               {
-                title: "Actions",
-                desc: "Named actions handled by your application",
-              },
-              {
-                title: "Visibility",
-                desc: "Conditional show/hide based on data or auth",
+                title: "Code Export",
+                desc: "Export as standalone React code with no runtime dependencies",
               },
             ].map((feature) => (
               <div key={feature.title}>

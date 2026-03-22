@@ -1,15 +1,16 @@
 import { z } from "zod";
-import type { DynamicValue, DataModel, LogicExpression } from "./types";
+import type { DynamicValue, StateModel, VisibilityCondition } from "./types";
 import { DynamicValueSchema, resolveDynamicValue } from "./types";
-import { LogicExpressionSchema, evaluateLogicExpression } from "./visibility";
+import { VisibilityConditionSchema, evaluateVisibility } from "./visibility";
+import { resolvePropValue } from "./props";
 
 /**
  * Validation check definition
  */
 export interface ValidationCheck {
-  /** Function name (built-in or from catalog) */
-  fn: string;
-  /** Additional arguments for the function */
+  /** Validation type (built-in or from catalog) */
+  type: string;
+  /** Additional arguments for the validation */
   args?: Record<string, DynamicValue>;
   /** Error message to display if check fails */
   message: string;
@@ -24,14 +25,14 @@ export interface ValidationConfig {
   /** When to run validation */
   validateOn?: "change" | "blur" | "submit";
   /** Condition for when validation is enabled */
-  enabled?: LogicExpression;
+  enabled?: VisibilityCondition;
 }
 
 /**
  * Schema for validation check
  */
 export const ValidationCheckSchema = z.object({
-  fn: z.string(),
+  type: z.string(),
   args: z.record(z.string(), DynamicValueSchema).optional(),
   message: z.string(),
 });
@@ -42,7 +43,7 @@ export const ValidationCheckSchema = z.object({
 export const ValidationConfigSchema = z.object({
   checks: z.array(ValidationCheckSchema).optional(),
   validateOn: z.enum(["change", "blur", "submit"]).optional(),
-  enabled: LogicExpressionSchema.optional(),
+  enabled: VisibilityConditionSchema.optional(),
 });
 
 /**
@@ -62,6 +63,14 @@ export interface ValidationFunctionDefinition {
   /** Description for AI */
   description?: string;
 }
+
+const matchesImpl: ValidationFunction = (
+  value: unknown,
+  args?: Record<string, unknown>,
+) => {
+  const other = args?.other;
+  return value === other;
+};
 
 /**
  * Built-in validation functions
@@ -164,9 +173,64 @@ export const builtInValidationFunctions: Record<string, ValidationFunction> = {
   /**
    * Check if value matches another field
    */
-  matches: (value: unknown, args?: Record<string, unknown>) => {
+  matches: matchesImpl,
+
+  /**
+   * Alias for matches with a more descriptive name for cross-field equality
+   */
+  equalTo: matchesImpl,
+
+  /**
+   * Check if value is less than another field's value.
+   * Supports numbers, strings (useful for ISO date comparison), and
+   * cross-type numeric coercion (e.g. string "3" vs number 5).
+   */
+  lessThan: (value: unknown, args?: Record<string, unknown>) => {
     const other = args?.other;
-    return value === other;
+    if (value == null || other == null || value === "" || other === "")
+      return false;
+    if (typeof value === "number" && typeof other === "number")
+      return value < other;
+    if (typeof value === "string" && typeof other === "string")
+      return value < other;
+    const numVal = Number(value);
+    const numOther = Number(other);
+    if (!isNaN(numVal) && !isNaN(numOther)) return numVal < numOther;
+    return false;
+  },
+
+  /**
+   * Check if value is greater than another field's value.
+   * Supports numbers, strings (useful for ISO date comparison), and
+   * cross-type numeric coercion (e.g. string "7" vs number 5).
+   */
+  greaterThan: (value: unknown, args?: Record<string, unknown>) => {
+    const other = args?.other;
+    if (value == null || other == null || value === "" || other === "")
+      return false;
+    if (typeof value === "number" && typeof other === "number")
+      return value > other;
+    if (typeof value === "string" && typeof other === "string")
+      return value > other;
+    const numVal = Number(value);
+    const numOther = Number(other);
+    if (!isNaN(numVal) && !isNaN(numOther)) return numVal > numOther;
+    return false;
+  },
+
+  /**
+   * Required only when a condition is met.
+   * Uses JS truthiness: 0, false, "", null, and undefined are all
+   * treated as "condition not met" (field not required), matching
+   * the visibility system's bare-condition semantics.
+   */
+  requiredIf: (value: unknown, args?: Record<string, unknown>) => {
+    const condition = args?.field;
+    if (!condition) return true;
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
   },
 };
 
@@ -174,7 +238,7 @@ export const builtInValidationFunctions: Record<string, ValidationFunction> = {
  * Validation result for a single check
  */
 export interface ValidationCheckResult {
-  fn: string;
+  type: string;
   valid: boolean;
   message: string;
 }
@@ -195,7 +259,7 @@ export interface ValidationContext {
   /** Current value to validate */
   value: unknown;
   /** Full data model for resolving paths */
-  dataModel: DataModel;
+  stateModel: StateModel;
   /** Custom validation functions from catalog */
   customFunctions?: Record<string, ValidationFunction>;
 }
@@ -207,33 +271,34 @@ export function runValidationCheck(
   check: ValidationCheck,
   ctx: ValidationContext,
 ): ValidationCheckResult {
-  const { value, dataModel, customFunctions } = ctx;
+  const { value, stateModel, customFunctions } = ctx;
 
-  // Resolve args
+  // Resolve args using resolvePropValue so nested $state refs (and any other
+  // prop expressions) are handled consistently with the rest of the system.
   const resolvedArgs: Record<string, unknown> = {};
   if (check.args) {
     for (const [key, argValue] of Object.entries(check.args)) {
-      resolvedArgs[key] = resolveDynamicValue(argValue, dataModel);
+      resolvedArgs[key] = resolvePropValue(argValue, { stateModel });
     }
   }
 
   // Find the validation function
-  const fn =
-    builtInValidationFunctions[check.fn] ?? customFunctions?.[check.fn];
+  const validationFn =
+    builtInValidationFunctions[check.type] ?? customFunctions?.[check.type];
 
-  if (!fn) {
-    console.warn(`Unknown validation function: ${check.fn}`);
+  if (!validationFn) {
+    console.warn(`Unknown validation function: ${check.type}`);
     return {
-      fn: check.fn,
+      type: check.type,
       valid: true, // Don't fail on unknown functions
       message: check.message,
     };
   }
 
-  const valid = fn(value, resolvedArgs);
+  const valid = validationFn(value, resolvedArgs);
 
   return {
-    fn: check.fn,
+    type: check.type,
     valid,
     message: check.message,
   };
@@ -244,16 +309,15 @@ export function runValidationCheck(
  */
 export function runValidation(
   config: ValidationConfig,
-  ctx: ValidationContext & { authState?: { isSignedIn: boolean } },
+  ctx: ValidationContext,
 ): ValidationResult {
   const checks: ValidationCheckResult[] = [];
   const errors: string[] = [];
 
   // Check if validation is enabled
   if (config.enabled) {
-    const enabled = evaluateLogicExpression(config.enabled, {
-      dataModel: ctx.dataModel,
-      authState: ctx.authState,
+    const enabled = evaluateVisibility(config.enabled, {
+      stateModel: ctx.stateModel,
     });
     if (!enabled) {
       return { valid: true, errors: [], checks: [] };
@@ -283,47 +347,52 @@ export function runValidation(
  */
 export const check = {
   required: (message = "This field is required"): ValidationCheck => ({
-    fn: "required",
+    type: "required",
     message,
   }),
 
   email: (message = "Invalid email address"): ValidationCheck => ({
-    fn: "email",
+    type: "email",
     message,
   }),
 
   minLength: (min: number, message?: string): ValidationCheck => ({
-    fn: "minLength",
+    type: "minLength",
     args: { min },
     message: message ?? `Must be at least ${min} characters`,
   }),
 
   maxLength: (max: number, message?: string): ValidationCheck => ({
-    fn: "maxLength",
+    type: "maxLength",
     args: { max },
     message: message ?? `Must be at most ${max} characters`,
   }),
 
   pattern: (pattern: string, message = "Invalid format"): ValidationCheck => ({
-    fn: "pattern",
+    type: "pattern",
     args: { pattern },
     message,
   }),
 
   min: (min: number, message?: string): ValidationCheck => ({
-    fn: "min",
+    type: "min",
     args: { min },
     message: message ?? `Must be at least ${min}`,
   }),
 
   max: (max: number, message?: string): ValidationCheck => ({
-    fn: "max",
+    type: "max",
     args: { max },
     message: message ?? `Must be at most ${max}`,
   }),
 
   url: (message = "Invalid URL"): ValidationCheck => ({
-    fn: "url",
+    type: "url",
+    message,
+  }),
+
+  numeric: (message = "Must be a number"): ValidationCheck => ({
+    type: "numeric",
     message,
   }),
 
@@ -331,8 +400,38 @@ export const check = {
     otherPath: string,
     message = "Fields must match",
   ): ValidationCheck => ({
-    fn: "matches",
-    args: { other: { path: otherPath } },
+    type: "matches",
+    args: { other: { $state: otherPath } },
+    message,
+  }),
+
+  equalTo: (
+    otherPath: string,
+    message = "Fields must match",
+  ): ValidationCheck => ({
+    type: "equalTo",
+    args: { other: { $state: otherPath } },
+    message,
+  }),
+
+  lessThan: (otherPath: string, message?: string): ValidationCheck => ({
+    type: "lessThan",
+    args: { other: { $state: otherPath } },
+    message: message ?? "Must be less than the compared field",
+  }),
+
+  greaterThan: (otherPath: string, message?: string): ValidationCheck => ({
+    type: "greaterThan",
+    args: { other: { $state: otherPath } },
+    message: message ?? "Must be greater than the compared field",
+  }),
+
+  requiredIf: (
+    fieldPath: string,
+    message = "This field is required",
+  ): ValidationCheck => ({
+    type: "requiredIf",
+    args: { field: { $state: fieldPath } },
     message,
   }),
 };

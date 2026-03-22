@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { GeistPixelSquare } from "geist/font/pixel";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { DocsChat } from "@/components/docs-chat";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { PAGE_TITLES } from "@/lib/page-titles";
+import { cookies } from "next/headers";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -17,15 +21,18 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL("https://json-render.dev"),
   title: {
-    default: "json-render | AI-generated UI with guardrails",
+    default: `json-render | ${PAGE_TITLES[""]}`,
     template: "%s | json-render",
   },
   description:
-    "Let users generate dashboards, widgets, apps, and data visualizations from prompts — safely constrained to components you define.",
+    "The Generative UI framework. Generate dashboards, widgets, and apps from prompts — safely constrained to components you define.",
   keywords: [
     "json-render",
+    "generative UI",
     "AI UI generation",
+    "user-generated interfaces",
     "React components",
+    "React Native",
     "guardrails",
     "structured output",
     "dashboard builder",
@@ -37,25 +44,24 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://json-render.dev",
     siteName: "json-render",
-    title: "json-render | AI-generated UI with guardrails",
+    title: "json-render | The Generative UI Framework",
     description:
-      "Let users generate dashboards, widgets, apps, and data visualizations from prompts — safely constrained to components you define.",
+      "The Generative UI framework. Generate dashboards, widgets, and apps from prompts — safely constrained to components you define.",
     images: [
       {
         url: "/og",
         width: 1200,
         height: 630,
-        alt: "json-render - AI-generated UI with guardrails",
+        alt: "json-render - The Generative UI Framework",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "json-render | AI-generated UI with guardrails",
+    title: "json-render | The Generative UI Framework",
     description:
-      "Let users generate dashboards, widgets, apps, and data visualizations from prompts — safely constrained to components you define.",
+      "The Generative UI framework. Generate dashboards, widgets, and apps from prompts — safely constrained to components you define.",
     images: ["/og"],
-    creator: "@verabornnot",
   },
   robots: {
     index: true,
@@ -66,15 +72,33 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const chatOpen = cookieStore.get("docs-chat-open")?.value === "true";
+  const chatWidth = Number(cookieStore.get("docs-chat-width")?.value) || 400;
+
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <ThemeProvider>{children}</ThemeProvider>
+      <head>
+        {chatOpen && (
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `@media(min-width:640px){body{padding-right:${chatWidth}px}}`,
+            }}
+          />
+        )}
+      </head>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} ${GeistPixelSquare.variable}`}
+      >
+        <ThemeProvider>
+          {children}
+          <DocsChat defaultOpen={chatOpen} defaultWidth={chatWidth} />
+        </ThemeProvider>
         <Analytics />
         <SpeedInsights />
       </body>

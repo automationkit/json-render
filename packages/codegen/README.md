@@ -17,23 +17,23 @@ pnpm add @json-render/codegen
 ### Tree Traversal
 
 ```typescript
-import { traverseTree, collectUsedComponents, collectDataPaths, collectActions } from '@json-render/codegen';
+import { traverseSpec, collectUsedComponents, collectStatePaths, collectActions } from '@json-render/codegen';
 
-// Walk the tree depth-first
-traverseTree(tree, (element, depth, parent) => {
-  console.log(`${' '.repeat(depth * 2)}${element.type}`);
+// Walk the spec depth-first
+traverseSpec(spec, (element, key, depth, parent) => {
+  console.log(`${' '.repeat(depth * 2)}${key}: ${element.type}`);
 });
 
 // Get all component types used
-const components = collectUsedComponents(tree);
+const components = collectUsedComponents(spec);
 // Set { 'Card', 'Metric', 'Button' }
 
-// Get all data paths referenced
-const dataPaths = collectDataPaths(tree);
+// Get all state paths referenced
+const statePaths = collectStatePaths(spec);
 // Set { 'analytics/revenue', 'user/name' }
 
 // Get all action names
-const actions = collectActions(tree);
+const actions = collectActions(spec);
 // Set { 'submit_form', 'refresh_data' }
 ```
 
@@ -49,8 +49,8 @@ serializePropValue("hello");
 serializePropValue(42);
 // { value: '42', needsBraces: true }
 
-serializePropValue({ path: 'user/name' });
-// { value: '{ path: "user/name" }', needsBraces: true }
+serializePropValue({ $state: '/user/name' });
+// { value: '{ $state: "/user/name" }', needsBraces: true }
 
 // Serialize props for JSX
 serializeProps({ title: "Dashboard", columns: 3, disabled: true });
@@ -64,7 +64,7 @@ import type { GeneratedFile, CodeGenerator } from '@json-render/codegen';
 
 // Implement your own code generator
 const myGenerator: CodeGenerator = {
-  generate(tree) {
+  generate(spec) {
     return [
       { path: 'package.json', content: '...' },
       { path: 'app/page.tsx', content: '...' },
@@ -80,16 +80,16 @@ See the `examples/dashboard` for a complete example of building a Next.js code g
 ```typescript
 import { 
   collectUsedComponents, 
-  collectDataPaths,
-  traverseTree,
+  collectStatePaths,
+  traverseSpec,
   serializeProps,
   type GeneratedFile 
 } from '@json-render/codegen';
-import type { UITree } from '@json-render/core';
+import type { Spec } from '@json-render/core';
 
-export function generateNextJSProject(tree: UITree): GeneratedFile[] {
+export function generateNextJSProject(spec: Spec): GeneratedFile[] {
   const files: GeneratedFile[] = [];
-  const components = collectUsedComponents(tree);
+  const components = collectUsedComponents(spec);
   
   // Generate package.json
   files.push({

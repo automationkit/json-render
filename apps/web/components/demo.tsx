@@ -7,161 +7,207 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { Renderer, useUIStream, JSONUIProvider } from "@json-render/react";
-import type { UITree } from "@json-render/core";
+import { useUIStream } from "@json-render/react";
+import type { Spec } from "@json-render/core";
 import { collectUsedComponents, serializeProps } from "@json-render/codegen";
 import { toast } from "sonner";
 import { CodeBlock } from "./code-block";
 import { CopyButton } from "./copy-button";
 import { Toaster } from "./ui/sonner";
-import {
-  demoRegistry,
-  fallbackComponent,
-  useInteractiveState,
-} from "./demo/index";
+import { PlaygroundRenderer } from "@/lib/render/renderer";
+import { playgroundCatalog } from "@/lib/render/catalog";
+import { buildCatalogDisplayData } from "@/lib/render/catalog-display";
 
 const SIMULATION_PROMPT = "Create a contact form with name, email, and message";
 
 interface SimulationStage {
-  tree: UITree;
+  tree: Spec;
   stream: string;
 }
+
+// Shared state & element definitions for the progressive simulation stages.
+const FORM_STATE = { form: { name: "", email: "", message: "" } };
+
+const NAME_INPUT = {
+  type: "Input",
+  props: {
+    label: "Name",
+    name: "name",
+    statePath: "/form/name",
+    checks: [{ type: "required", message: "Name is required" }],
+  },
+} as const;
+
+const EMAIL_INPUT = {
+  type: "Input",
+  props: {
+    label: "Email",
+    name: "email",
+    type: "email",
+    statePath: "/form/email",
+    checks: [
+      { type: "required", message: "Email is required" },
+      { type: "email", message: "Please enter a valid email" },
+    ],
+  },
+} as const;
+
+const MESSAGE_INPUT = {
+  type: "Textarea",
+  props: {
+    label: "Message",
+    name: "message",
+    statePath: "/form/message",
+    checks: [{ type: "required", message: "Message is required" }],
+  },
+} as const;
+
+const SUBMIT_BUTTON = {
+  type: "Button",
+  props: { label: "Send Message", variant: "primary" },
+  on: { press: { action: "formSubmit" } },
+} as const;
 
 const SIMULATION_STAGES: SimulationStage[] = [
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
-          key: "card",
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: [],
         },
       },
     },
-    stream: '{"op":"set","path":"/root","value":"card"}',
+    stream: '{"op":"add","path":"/root","value":"card"}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
-          key: "card",
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name"],
         },
-        name: {
-          key: "name",
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
+        name: NAME_INPUT,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/card","value":{"key":"card","type":"Card","props":{"title":"Contact Us","maxWidth":"md"},"children":["name"]}}',
+      '{"op":"add","path":"/elements/name","value":{"type":"Input","props":{"label":"Name","name":"name","statePath":"/form/name","checks":[{"type":"required","message":"Name is required"}]}}}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
-          key: "card",
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name", "email"],
         },
-        name: {
-          key: "name",
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
-        email: {
-          key: "email",
-          type: "Input",
-          props: { label: "Email", name: "email" },
-        },
+        name: NAME_INPUT,
+        email: EMAIL_INPUT,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/email","value":{"key":"email","type":"Input","props":{"label":"Email","name":"email"}}}',
+      '{"op":"add","path":"/elements/email","value":{"type":"Input","props":{"label":"Email","name":"email","type":"email","statePath":"/form/email","checks":[{"type":"required","message":"Email is required"},{"type":"email","message":"Please enter a valid email"}]}}}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
-          key: "card",
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name", "email", "message"],
         },
-        name: {
-          key: "name",
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
-        email: {
-          key: "email",
-          type: "Input",
-          props: { label: "Email", name: "email" },
-        },
-        message: {
-          key: "message",
-          type: "Textarea",
-          props: { label: "Message", name: "message" },
-        },
+        name: NAME_INPUT,
+        email: EMAIL_INPUT,
+        message: MESSAGE_INPUT,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/message","value":{"key":"message","type":"Textarea","props":{"label":"Message","name":"message"}}}',
+      '{"op":"add","path":"/elements/message","value":{"type":"Textarea","props":{"label":"Message","name":"message","statePath":"/form/message","checks":[{"type":"required","message":"Message is required"}]}}}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
-          key: "card",
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name", "email", "message", "submit"],
         },
-        name: {
-          key: "name",
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
-        email: {
-          key: "email",
-          type: "Input",
-          props: { label: "Email", name: "email" },
-        },
-        message: {
-          key: "message",
-          type: "Textarea",
-          props: { label: "Message", name: "message" },
-        },
-        submit: {
-          key: "submit",
-          type: "Button",
-          props: { label: "Send Message", variant: "primary" },
-        },
+        name: NAME_INPUT,
+        email: EMAIL_INPUT,
+        message: MESSAGE_INPUT,
+        submit: SUBMIT_BUTTON,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/submit","value":{"key":"submit","type":"Button","props":{"label":"Send Message","variant":"primary"}}}',
+      '{"op":"add","path":"/elements/submit","value":{"type":"Button","props":{"label":"Send Message","variant":"primary"},"on":{"press":{"action":"formSubmit"}}}}',
   },
 ];
 
 type Mode = "simulation" | "interactive";
 type Phase = "typing" | "streaming" | "complete";
-type Tab = "stream" | "json";
+type Tab = "stream" | "json" | "nested" | "catalog";
 type RenderView = "dynamic" | "static";
 
 interface DemoProps {
   fullscreen?: boolean;
   skipSimulation?: boolean;
+}
+
+/**
+ * Convert a flat Spec into a nested tree structure that is easier for humans
+ * to read. Children keys are resolved recursively into inline objects.
+ */
+function specToNested(spec: Spec): Record<string, unknown> {
+  function resolve(key: string): Record<string, unknown> {
+    const el = spec.elements[key];
+    if (!el) return { _key: key, _missing: true };
+
+    const node: Record<string, unknown> = { type: el.type };
+
+    if (el.props && Object.keys(el.props).length > 0) {
+      node.props = el.props;
+    }
+
+    if (el.visible !== undefined) {
+      node.visible = el.visible;
+    }
+
+    if (el.on && Object.keys(el.on).length > 0) {
+      node.on = el.on;
+    }
+
+    if (el.repeat) {
+      node.repeat = el.repeat;
+    }
+
+    if (el.children && el.children.length > 0) {
+      node.children = el.children.map(resolve);
+    }
+
+    return node;
+  }
+
+  const result: Record<string, unknown> = {};
+
+  if (spec.state && Object.keys(spec.state).length > 0) {
+    result.state = spec.state;
+  }
+
+  result.elements = resolve(spec.root);
+
+  return result;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -187,7 +233,7 @@ export function Demo({
   const [streamLines, setStreamLines] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("json");
   const [renderView, setRenderView] = useState<RenderView>("dynamic");
-  const [simulationTree, setSimulationTree] = useState<UITree | null>(null);
+  const [simulationTree, setSimulationTree] = useState<Spec | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedExportFile, setSelectedExportFile] = useState<string | null>(
@@ -198,6 +244,15 @@ export function Demo({
     new Set(),
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  const [catalogSection, setCatalogSection] = useState<
+    "components" | "actions"
+  >("components");
+
+  // Catalog data for the catalog tab
+  const catalogData = useMemo(
+    () => buildCatalogDisplayData(playgroundCatalog.data),
+    [],
+  );
 
   // Disable body scroll when any modal is open
   useEffect(() => {
@@ -213,17 +268,18 @@ export function Demo({
 
   // Use the library's useUIStream hook for real API calls
   const {
-    tree: apiTree,
+    spec: apiSpec,
     isStreaming,
     send,
     clear,
+    rawLines: apiRawLines,
   } = useUIStream({
     api: "/api/generate",
-    onError: (err: Error) => console.error("Generation error:", err),
+    onError: (err: Error) => {
+      console.error("Generation error:", err);
+      toast.error(err.message || "Generation failed. Please try again.");
+    },
   } as Parameters<typeof useUIStream>[0]);
-
-  // Initialize interactive state for Select components
-  useInteractiveState();
 
   const currentSimulationStage =
     stageIndex >= 0 ? SIMULATION_STAGES[stageIndex] : null;
@@ -232,7 +288,7 @@ export function Demo({
   const currentTree =
     mode === "simulation"
       ? currentSimulationStage?.tree || simulationTree
-      : apiTree || simulationTree;
+      : apiSpec || simulationTree;
 
   const stopGeneration = useCallback(() => {
     if (mode === "simulation") {
@@ -289,25 +345,12 @@ export function Demo({
     return () => clearInterval(interval);
   }, [mode, phase]);
 
-  // Track stream lines from real API
+  // Track stream lines from real API (use raw JSONL patch lines)
   useEffect(() => {
-    if (mode === "interactive" && apiTree) {
-      // Convert tree to stream line for display
-      const streamLine = JSON.stringify({ tree: apiTree });
-      if (
-        !streamLines.includes(streamLine) &&
-        Object.keys(apiTree.elements).length > 0
-      ) {
-        setStreamLines((prev) => {
-          const lastLine = prev[prev.length - 1];
-          if (lastLine !== streamLine) {
-            return [...prev, streamLine];
-          }
-          return prev;
-        });
-      }
+    if (mode === "interactive" && apiRawLines.length > 0) {
+      setStreamLines(apiRawLines);
     }
-  }, [mode, apiTree, streamLines]);
+  }, [mode, apiRawLines]);
 
   const handleSubmit = useCallback(async () => {
     if (!userPrompt.trim() || isStreaming) return;
@@ -315,22 +358,14 @@ export function Demo({
     await send(userPrompt);
   }, [userPrompt, isStreaming, send]);
 
-  // Expose action handler for registry components - shows toast with text
-  useEffect(() => {
-    (
-      window as unknown as { __demoAction?: (text: string) => void }
-    ).__demoAction = (text: string) => {
-      toast(text);
-    };
-    return () => {
-      delete (window as unknown as { __demoAction?: (text: string) => void })
-        .__demoAction;
-    };
-  }, []);
-
   const jsonCode = currentTree
     ? JSON.stringify(currentTree, null, 2)
     : "// waiting...";
+
+  const nestedCode = useMemo(() => {
+    if (!currentTree || !currentTree.root) return "// waiting...";
+    return JSON.stringify(specToNested(currentTree), null, 2);
+  }, [currentTree]);
 
   // Generate all export files for Next.js project
   const exportedFiles = useMemo(() => {
@@ -932,7 +967,13 @@ Open [http://localhost:3000](http://localhost:3000) to view.
     setMode("interactive");
     setPhase("complete");
     setUserPrompt(prompt);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    setTimeout(() => {
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(prompt.length, prompt.length);
+      }
+    }, 0);
   }, []);
 
   return (
@@ -1041,9 +1082,16 @@ Open [http://localhost:3000](http://localhost:3000) to view.
             ))}
           </div>
         ) : (
-          <div className="mt-2 text-xs text-muted-foreground text-center">
-            Try: &quot;Create a login form&quot; or &quot;Build a feedback form
-            with rating&quot;
+          <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
+            {EXAMPLE_PROMPTS.slice(0, 2).map((prompt) => (
+              <button
+                key={prompt}
+                onClick={() => handleExampleClick(prompt)}
+                className="text-xs px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+              >
+                {prompt}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -1054,7 +1102,7 @@ Open [http://localhost:3000](http://localhost:3000) to view.
         {/* Tabbed code/stream/json panel */}
         <div className={`min-w-0 ${fullscreen ? "flex flex-col" : ""}`}>
           <div className="flex items-center gap-4 mb-2 h-6 shrink-0">
-            {(["json", "stream"] as const).map((tab) => (
+            {(["json", "nested", "stream", "catalog"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -1071,14 +1119,20 @@ Open [http://localhost:3000](http://localhost:3000) to view.
           <div
             className={`border border-border rounded bg-background font-mono text-xs text-left grid relative group ${fullscreen ? "flex-1 min-h-0" : "h-[28rem]"}`}
           >
-            <div className="absolute top-2 right-2 z-10">
-              <CopyButton
-                text={
-                  activeTab === "stream" ? streamLines.join("\n") : jsonCode
-                }
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground"
-              />
-            </div>
+            {activeTab !== "catalog" && (
+              <div className="absolute top-2 right-2 z-10">
+                <CopyButton
+                  text={
+                    activeTab === "stream"
+                      ? streamLines.join("\n")
+                      : activeTab === "nested"
+                        ? nestedCode
+                        : jsonCode
+                  }
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground"
+                />
+              </div>
+            )}
             <div
               className={`overflow-auto ${activeTab === "stream" ? "" : "hidden"}`}
             >
@@ -1113,6 +1167,136 @@ Open [http://localhost:3000](http://localhost:3000) to view.
                 fillHeight
                 hideCopyButton
               />
+            </div>
+            <div
+              className={`overflow-auto ${activeTab === "nested" ? "" : "hidden"}`}
+            >
+              <CodeBlock
+                code={nestedCode}
+                lang="json"
+                fillHeight
+                hideCopyButton
+              />
+            </div>
+            <div
+              className={`overflow-auto ${activeTab === "catalog" ? "" : "hidden"}`}
+            >
+              <div className="h-full flex flex-col text-sm font-sans">
+                <div className="flex items-center gap-3 px-3 h-9 border-b border-border">
+                  {(
+                    [
+                      {
+                        key: "components",
+                        label: `components (${catalogData.components.length})`,
+                      },
+                      {
+                        key: "actions",
+                        label: `actions (${catalogData.actions.length})`,
+                      },
+                    ] as const
+                  ).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setCatalogSection(key)}
+                      className={`text-xs font-mono transition-colors ${
+                        catalogSection === key
+                          ? "text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 overflow-auto p-3">
+                  {catalogSection === "components" ? (
+                    <div className="space-y-3">
+                      {catalogData.components.map((comp) => (
+                        <div
+                          key={comp.name}
+                          className="pb-3 border-b border-border last:border-b-0"
+                        >
+                          <div className="flex items-baseline gap-2 mb-1">
+                            <span className="font-mono font-medium text-foreground">
+                              {comp.name}
+                            </span>
+                            {comp.slots.length > 0 && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                slots: {comp.slots.join(", ")}
+                              </span>
+                            )}
+                          </div>
+                          {comp.description && (
+                            <p className="text-xs text-muted-foreground mb-2">
+                              {comp.description}
+                            </p>
+                          )}
+                          {comp.props.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-1">
+                              {comp.props.map((p) => (
+                                <span
+                                  key={p.name}
+                                  className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-green-500/10 text-green-700 dark:text-green-400"
+                                >
+                                  {p.name}
+                                  <span className="text-green-700/50 dark:text-green-400/50">
+                                    : {p.type}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {comp.events.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {comp.events.map((e) => (
+                                <span
+                                  key={e}
+                                  className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                >
+                                  on.{e}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {catalogData.actions.map((action) => (
+                        <div
+                          key={action.name}
+                          className="pb-3 border-b border-border last:border-b-0"
+                        >
+                          <span className="font-mono font-medium text-foreground">
+                            {action.name}
+                          </span>
+                          {action.description && (
+                            <p className="text-xs text-muted-foreground mt-1 mb-2">
+                              {action.description}
+                            </p>
+                          )}
+                          {action.params.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {action.params.map((p) => (
+                                <span
+                                  key={p.name}
+                                  className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-green-500/10 text-green-700 dark:text-green-400"
+                                >
+                                  {p.name}
+                                  <span className="text-green-700/50 dark:text-green-400/50">
+                                    : {p.type}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1187,28 +1371,10 @@ Open [http://localhost:3000](http://localhost:3000) to view.
               <div className="overflow-auto">
                 {currentTree && currentTree.root ? (
                   <div className="animate-in fade-in duration-200 w-full min-h-full flex items-center justify-center p-3 py-4">
-                    <JSONUIProvider
-                      registry={
-                        demoRegistry as Parameters<
-                          typeof JSONUIProvider
-                        >[0]["registry"]
-                      }
-                    >
-                      <Renderer
-                        tree={currentTree}
-                        registry={
-                          demoRegistry as Parameters<
-                            typeof Renderer
-                          >[0]["registry"]
-                        }
-                        loading={isStreaming || isStreamingSimulation}
-                        fallback={
-                          fallbackComponent as Parameters<
-                            typeof Renderer
-                          >[0]["fallback"]
-                        }
-                      />
-                    </JSONUIProvider>
+                    <PlaygroundRenderer
+                      spec={currentTree}
+                      loading={isStreaming || isStreamingSimulation}
+                    />
                   </div>
                 ) : (
                   <div className="h-full flex items-center justify-center text-muted-foreground/50 text-sm">
@@ -1259,26 +1425,10 @@ Open [http://localhost:3000](http://localhost:3000) to view.
           <div className="flex-1 overflow-auto p-6">
             {currentTree && currentTree.root ? (
               <div className="w-full min-h-full flex items-center justify-center">
-                <JSONUIProvider
-                  registry={
-                    demoRegistry as Parameters<
-                      typeof JSONUIProvider
-                    >[0]["registry"]
-                  }
-                >
-                  <Renderer
-                    tree={currentTree}
-                    registry={
-                      demoRegistry as Parameters<typeof Renderer>[0]["registry"]
-                    }
-                    loading={isStreaming || isStreamingSimulation}
-                    fallback={
-                      fallbackComponent as Parameters<
-                        typeof Renderer
-                      >[0]["fallback"]
-                    }
-                  />
-                </JSONUIProvider>
+                <PlaygroundRenderer
+                  spec={currentTree}
+                  loading={isStreaming || isStreamingSimulation}
+                />
               </div>
             ) : (
               <div className="h-full flex items-center justify-center text-muted-foreground/50 text-sm">

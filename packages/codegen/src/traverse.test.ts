@@ -1,30 +1,27 @@
 import { describe, it, expect } from "vitest";
 import {
-  traverseTree,
+  traverseSpec,
   collectUsedComponents,
-  collectDataPaths,
+  collectStatePaths,
   collectActions,
 } from "./traverse";
-import type { UITree } from "@json-render/core";
+import type { Spec } from "@json-render/core";
 
-describe("traverseTree", () => {
+describe("traverseSpec", () => {
   it("visits all elements depth-first", () => {
-    const tree: UITree = {
+    const spec: Spec = {
       root: "root",
       elements: {
         root: {
-          key: "root",
           type: "Card",
           props: {},
           children: ["child1", "child2"],
         },
         child1: {
-          key: "child1",
           type: "Text",
           props: {},
         },
         child2: {
-          key: "child2",
           type: "Button",
           props: {},
         },
@@ -32,17 +29,17 @@ describe("traverseTree", () => {
     };
 
     const visited: string[] = [];
-    traverseTree(tree, (element) => {
-      visited.push(element.key);
+    traverseSpec(spec, (_element, key) => {
+      visited.push(key);
     });
 
     expect(visited).toEqual(["root", "child1", "child2"]);
   });
 
-  it("handles empty tree", () => {
+  it("handles empty spec", () => {
     const visited: string[] = [];
-    traverseTree(null as unknown as UITree, (element) => {
-      visited.push(element.key);
+    traverseSpec(null as unknown as Spec, (_element, key) => {
+      visited.push(key);
     });
     expect(visited).toEqual([]);
   });
@@ -50,81 +47,125 @@ describe("traverseTree", () => {
 
 describe("collectUsedComponents", () => {
   it("collects unique component types", () => {
-    const tree: UITree = {
+    const spec: Spec = {
       root: "root",
       elements: {
         root: {
-          key: "root",
           type: "Card",
           props: {},
           children: ["child1", "child2"],
         },
         child1: {
-          key: "child1",
           type: "Text",
           props: {},
         },
         child2: {
-          key: "child2",
           type: "Text",
           props: {},
         },
       },
     };
 
-    const components = collectUsedComponents(tree);
+    const components = collectUsedComponents(spec);
     expect(components).toEqual(new Set(["Card", "Text"]));
   });
 });
 
-describe("collectDataPaths", () => {
-  it("collects paths from valuePath props", () => {
-    const tree: UITree = {
+describe("collectStatePaths", () => {
+  it("collects paths from statePath props", () => {
+    const spec: Spec = {
       root: "root",
       elements: {
         root: {
-          key: "root",
           type: "Metric",
-          props: { valuePath: "analytics/revenue" },
+          props: { statePath: "analytics/revenue" },
         },
       },
     };
 
-    const paths = collectDataPaths(tree);
+    const paths = collectStatePaths(spec);
     expect(paths).toEqual(new Set(["analytics/revenue"]));
   });
 
   it("collects paths from dynamic value objects", () => {
-    const tree: UITree = {
+    const spec: Spec = {
       root: "root",
       elements: {
         root: {
-          key: "root",
           type: "Text",
-          props: { content: { path: "user/name" } },
+          props: { content: { $state: "/user/name" } },
         },
       },
     };
 
-    const paths = collectDataPaths(tree);
-    expect(paths).toEqual(new Set(["user/name"]));
+    const paths = collectStatePaths(spec);
+    expect(paths).toEqual(new Set(["/user/name"]));
   });
 });
 
 describe("collectActions", () => {
   it("collects action names from props", () => {
-    const tree: UITree = {
+    const spec: Spec = {
       root: "root",
       elements: {
         root: {
-          key: "root",
           type: "Button",
           props: { action: "submit_form" },
         },
       },
     };
 
-    const actions = collectActions(tree);
+    const actions = collectActions(spec);
     expect(actions).toEqual(new Set(["submit_form"]));
+  });
+
+  it("collects actions from on event bindings", () => {
+    const spec: Spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Button",
+          props: {},
+          on: { press: { action: "submitForm" } },
+        },
+      },
+    };
+
+    const actions = collectActions(spec);
+    expect(actions).toEqual(new Set(["submitForm"]));
+  });
+
+  it("collects actions from on array bindings", () => {
+    const spec: Spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Button",
+          props: {},
+          on: {
+            press: [{ action: "save" }, { action: "navigate" }],
+          },
+        },
+      },
+    };
+
+    const actions = collectActions(spec);
+    expect(actions).toEqual(new Set(["save", "navigate"]));
+  });
+
+  it("collects actions from both props and on", () => {
+    const spec: Spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Button",
+          props: { action: "submit_form" },
+          on: { press: { action: "setState", params: { statePath: "/x" } } },
+        },
+      },
+    };
+
+    const actions = collectActions(spec);
+    expect(actions).toEqual(new Set(["submit_form", "setState"]));
   });
 });

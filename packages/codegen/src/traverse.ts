@@ -1,31 +1,36 @@
-import type { UITree, UIElement } from "@json-render/core";
+import type { Spec, UIElement } from "@json-render/core";
 
 /**
- * Visitor function for tree traversal
+ * Visitor function for spec traversal
  */
 export interface TreeVisitor {
-  (element: UIElement, depth: number, parent: UIElement | null): void;
+  (
+    element: UIElement,
+    key: string,
+    depth: number,
+    parent: UIElement | null,
+  ): void;
 }
 
 /**
- * Traverse a UI tree depth-first
+ * Traverse a UI spec depth-first
  */
-export function traverseTree(
-  tree: UITree,
+export function traverseSpec(
+  spec: Spec,
   visitor: TreeVisitor,
   startKey?: string,
 ): void {
-  if (!tree || !tree.root) return;
+  if (!spec || !spec.root) return;
 
-  const rootKey = startKey ?? tree.root;
-  const rootElement = tree.elements[rootKey];
+  const rootKey = startKey ?? spec.root;
+  const rootElement = spec.elements[rootKey];
   if (!rootElement) return;
 
   function visit(key: string, depth: number, parent: UIElement | null): void {
-    const element = tree.elements[key];
+    const element = spec.elements[key];
     if (!element) return;
 
-    visitor(element, depth, parent);
+    visitor(element, key, depth, parent);
 
     if (element.children) {
       for (const childKey of element.children) {
@@ -38,12 +43,12 @@ export function traverseTree(
 }
 
 /**
- * Collect all unique component types used in a tree
+ * Collect all unique component types used in a spec
  */
-export function collectUsedComponents(tree: UITree): Set<string> {
+export function collectUsedComponents(spec: Spec): Set<string> {
   const components = new Set<string>();
 
-  traverseTree(tree, (element) => {
+  traverseSpec(spec, (element, _key) => {
     components.add(element.type);
   });
 
@@ -51,43 +56,64 @@ export function collectUsedComponents(tree: UITree): Set<string> {
 }
 
 /**
- * Collect all data paths referenced in a tree
+ * Collect all state paths referenced in a spec
  */
-export function collectDataPaths(tree: UITree): Set<string> {
+export function collectStatePaths(spec: Spec): Set<string> {
   const paths = new Set<string>();
 
-  traverseTree(tree, (element) => {
+  traverseSpec(spec, (element, _key) => {
     // Check props for data paths
     for (const [propName, propValue] of Object.entries(element.props)) {
-      // Check for path props (e.g., valuePath, dataPath, bindPath)
+      // Check for path props (e.g., statePath, dataPath, bindPath)
       if (typeof propValue === "string") {
         if (
           propName.endsWith("Path") ||
           propName === "bindPath" ||
-          propName === "dataPath"
+          propName === "statePath"
         ) {
           paths.add(propValue);
         }
       }
 
-      // Check for dynamic value objects with path
+      // Check for dynamic value objects with $state
       if (
         propValue &&
         typeof propValue === "object" &&
-        "path" in propValue &&
-        typeof (propValue as { path: unknown }).path === "string"
+        "$state" in propValue &&
+        typeof (propValue as { $state: unknown }).$state === "string"
       ) {
-        paths.add((propValue as { path: string }).path);
+        paths.add((propValue as { $state: string }).$state);
       }
     }
 
-    // Check visibility conditions for paths
-    if (element.visible && typeof element.visible === "object") {
+    // Check visibility conditions for $state paths
+    if (element.visible != null && typeof element.visible !== "boolean") {
       collectPathsFromCondition(element.visible, paths);
     }
   });
 
   return paths;
+}
+
+function collectPathFromItem(
+  item: Record<string, unknown>,
+  paths: Set<string>,
+): void {
+  if (typeof item.$state === "string") {
+    paths.add(item.$state);
+  }
+  // Also collect $state references in comparison values (eq, neq, etc.)
+  for (const op of ["eq", "neq", "gt", "gte", "lt", "lte"]) {
+    const val = item[op];
+    if (
+      val &&
+      typeof val === "object" &&
+      "$state" in (val as Record<string, unknown>) &&
+      typeof (val as Record<string, unknown>).$state === "string"
+    ) {
+      paths.add((val as { $state: string }).$state);
+    }
+  }
 }
 
 function collectPathsFromCondition(
@@ -96,52 +122,37 @@ function collectPathsFromCondition(
 ): void {
   if (!condition || typeof condition !== "object") return;
 
-  const cond = condition as Record<string, unknown>;
-
-  if ("path" in cond && typeof cond.path === "string") {
-    paths.add(cond.path);
-  }
-
-  if ("and" in cond && Array.isArray(cond.and)) {
-    for (const sub of cond.and) {
-      collectPathsFromCondition(sub, paths);
-    }
-  }
-
-  if ("or" in cond && Array.isArray(cond.or)) {
-    for (const sub of cond.or) {
-      collectPathsFromCondition(sub, paths);
-    }
-  }
-
-  if ("not" in cond) {
-    collectPathsFromCondition(cond.not, paths);
-  }
-
-  // Check comparison operators
-  for (const op of ["eq", "neq", "gt", "gte", "lt", "lte"]) {
-    if (op in cond && Array.isArray(cond[op])) {
-      for (const operand of cond[op] as unknown[]) {
-        if (
-          operand &&
-          typeof operand === "object" &&
-          "path" in operand &&
-          typeof (operand as { path: unknown }).path === "string"
-        ) {
-          paths.add((operand as { path: string }).path);
-        }
+  // Array = implicit AND
+  if (Array.isArray(condition)) {
+    for (const item of condition) {
+      if (item && typeof item === "object") {
+        collectPathFromItem(item as Record<string, unknown>, paths);
       }
     }
+    return;
   }
+
+  const cond = condition as Record<string, unknown>;
+
+  // $or: recurse into each child condition
+  if ("$or" in cond && Array.isArray(cond.$or)) {
+    for (const child of cond.$or) {
+      collectPathsFromCondition(child, paths);
+    }
+    return;
+  }
+
+  // Single StateCondition
+  collectPathFromItem(cond, paths);
 }
 
 /**
- * Collect all action names used in a tree
+ * Collect all action names used in a spec
  */
-export function collectActions(tree: UITree): Set<string> {
+export function collectActions(spec: Spec): Set<string> {
   const actions = new Set<string>();
 
-  traverseTree(tree, (element) => {
+  traverseSpec(spec, (element, _key) => {
     for (const propValue of Object.values(element.props)) {
       // Check for action prop (string action name)
       if (typeof propValue === "string" && propValue.startsWith("action:")) {
@@ -163,6 +174,24 @@ export function collectActions(tree: UITree): Set<string> {
     const actionProp = element.props.action;
     if (typeof actionProp === "string") {
       actions.add(actionProp);
+    }
+
+    // Collect actions from on event bindings
+    const onBindings = element.on;
+    if (onBindings) {
+      for (const binding of Object.values(onBindings)) {
+        const bindings = Array.isArray(binding) ? binding : [binding];
+        for (const b of bindings) {
+          if (
+            b &&
+            typeof b === "object" &&
+            "action" in b &&
+            typeof (b as { action: unknown }).action === "string"
+          ) {
+            actions.add((b as { action: string }).action);
+          }
+        }
+      }
     }
   });
 

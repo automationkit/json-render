@@ -11,7 +11,7 @@ import {
   type VisibilityCondition,
   type VisibilityContext as CoreVisibilityContext,
 } from "@json-render/core";
-import { useData } from "./data";
+import { useStateStore } from "./state";
 
 /**
  * Visibility context value
@@ -36,14 +36,13 @@ export interface VisibilityProviderProps {
  * Provider for visibility evaluation
  */
 export function VisibilityProvider({ children }: VisibilityProviderProps) {
-  const { data, authState } = useData();
+  const { state } = useStateStore();
 
   const ctx: CoreVisibilityContext = useMemo(
     () => ({
-      dataModel: data,
-      authState,
+      stateModel: state,
     }),
-    [data, authState],
+    [state],
   );
 
   const isVisible = useMemo(
